@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+import hashlib
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+BUILD = ROOT / "build.py"
+
+SAMPLE = """# Receipt 13–16.10.2026
+## Experiment
+- An AI studio ships code written by agents on getpostingboard.dev.
+## Week
+| Metric | Value | Source |
+| --- | --- | --- |
+| Merged PRs | 26 | gh pr list --state merged |
+| With board code | 14 | same |
+## Ledger
+| Task | Promised | Done | Merged | Author | Quote |
+| --- | --- | --- | --- | --- | --- |
+| P1, P2 | [thread](https://getpostingboard.dev/v1/posts/bae900a1-049d-4e33-be85-06e1d7e4b358) | 13.10 | [mirror](https://github.com/ITSalt/photo-check-bot-mirror) | rosenrot | "PR 64 merged, tests 41/41" — rosenrot, 13.10 |
+| X1 | [thread](https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000000) | — | — tests failed | example-agent | "tests failed on gold pair 2" — example-agent, 14.10 |
+"""
+
+
+SPEC = """# Receipt 13–16.10.2026
+## Experiment
+- An AI studio ships code written by agents on getpostingboard.dev.
+## Week
+| Metric | Value | Source |
+| Merged PRs | 26 | gh pr list --state merged |
+| With board code | 14 | same |
+## Ledger
+| Task | Promised | Done | Merged | Author |
+| P1, P2 | [thread](https://getpostingboard.dev/v1/posts/bae900a1-049d-4e33-be85-06e1d7e4b358) | 13.10 | [mirror](https://github.com/ITSalt/photo-check-bot-mirror) | rosenrot |
+| X1 | [thread](https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000000) | — | — tests failed | example-agent |
+"""
+
+def run_build(md: str, out: Path) -> subprocess.CompletedProcess:
+    md_path = out.parent / "week.md"
+    md_path.write_text(md, encoding="utf-8")
+    return subprocess.run(
+        ["python3", str(BUILD), str(md_path), str(out)],
+        capture_output=True,
+        text=True,
+    )
+
+
+class TestBuild(unittest.TestCase):
+    def test_deterministic(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            a, b = td / "a", td / "b"
+            self.assertEqual(run_build(SAMPLE, a).returncode, 0)
+            self.assertEqual(run_build(SAMPLE, b).returncode, 0)
+            self.assertEqual(
+                (a / "index.html").read_bytes(), (b / "index.html").read_bytes()
+            )
+
+    def test_urls_as_href(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            out = td / "out"
+            self.assertEqual(run_build(SAMPLE, out).returncode, 0)
+            page = (out / "index.html").read_text(encoding="utf-8")
+            for url in (
+                "https://getpostingboard.dev/v1/posts/bae900a1-049d-4e33-be85-06e1d7e4b358",
+                "https://github.com/ITSalt/photo-check-bot-mirror",
+                "https://getpostingboard.dev/v1/posts/00000000-0000-0000-0000-000000000000",
+            ):
+                self.assertIn(f'href="{url}"', page)
+
+    def test_secret_rejected(self):
+        bad = SAMPLE + "\nnote " + "ghp" + "_EXAMPLETOKENSHOULDFAILHERE123\n"
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            out = td / "out"
+            r = run_build(bad, out)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertTrue(r.stderr.strip())
+            self.assertFalse((out / "index.html").exists())
+
+    def test_long_token_rejected(self):
+        tok = "A" * 32
+        bad = SAMPLE.replace("example-agent", tok)
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            out = td / "out"
+            r = run_build(bad, out)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertFalse((out / "index.html").exists())
+
+    def test_email_rejected_handle_ok(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            out = td / "out"
+            self.assertEqual(run_build(SAMPLE, out).returncode, 0)  # @rosenrot in quote ok via handle form
+            bad = SAMPLE + "\ncontact me@example.com please\n"
+            r = run_build(bad, td / "out2")
+            self.assertNotEqual(r.returncode, 0)
+
+    def test_no_external_script_or_http_assets(self):
+        import re
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            out = td / "out"
+            self.assertEqual(run_build(SAMPLE, out).returncode, 0)
+            page = (out / "index.html").read_text(encoding="utf-8")
+            self.assertIsNone(re.search(r"<script[^>]+src", page, re.I))
+            self.assertIsNone(re.search(r"<link[^>]+http", page, re.I))
+            for m in re.finditer(r"<style>(.*?)</style>", page, re.S | re.I):
+                self.assertNotIn("http", m.group(1))
+
+    def test_quotes_escaped(self):
+        md = SAMPLE.replace(
+            '"PR 64 merged, tests 41/41" — rosenrot, 13.10',
+            '"said <b>no</b> & \"yes\"" — rosenrot, 13.10',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            out = td / "out"
+            self.assertEqual(run_build(md, out).returncode, 0)
+            page = (out / "index.html").read_text(encoding="utf-8")
+            self.assertIn("&lt;b&gt;no&lt;/b&gt;", page)
+            self.assertNotIn("<b>no</b>", page)
+            self.assertIn("said", page)
+
+    def test_quote_too_long(self):
+        long_q = ("word " * 60).strip()  # >280 chars, no secret-like token
+        assert len(long_q) > 280
+        md = SAMPLE.replace(
+            '"PR 64 merged, tests 41/41" — rosenrot, 13.10', long_q
+        )
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            out = td / "out"
+            r = run_build(md, out)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("280", r.stderr)
+            self.assertFalse((out / "index.html").exists())
+
+    def test_emdash_visible(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            out = td / "out"
+            self.assertEqual(run_build(SAMPLE, out).returncode, 0)
+            page = (out / "index.html").read_text(encoding="utf-8")
+            self.assertIn("—", page)
+
+    def test_spec_input_no_separator(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td); out = td / "out"
+            self.assertEqual(run_build(SPEC, out).returncode, 0)
+            page = (out / "index.html").read_text(encoding="utf-8")
+            self.assertIn("<td>Merged PRs</td>", page)
+            self.assertIn("<td>— tests failed</td>", page)
+
+    def test_words_and_hashes_not_secrets(self):
+        for frag in ("Risk-free", "desk-check", "xoxo", "OAKIAN",
+                     "commit " + "a3" * 20, "sha " + "0b" * 32):
+            with self.subTest(frag=frag), tempfile.TemporaryDirectory() as td:
+                out = Path(td) / "out"
+                md = SAMPLE.replace("tests 41/41", frag)
+                self.assertEqual(run_build(md, out).returncode, 0, frag)
+        with tempfile.TemporaryDirectory() as td:
+            md = SAMPLE.replace("photo-check-bot-mirror", "task-runner")
+            self.assertEqual(run_build(md, Path(td) / "out").returncode, 0)
+
+    def test_real_tokens_still_fail(self):
+        for frag in ("xoxb-1234-abcd", "AKIA" + "ABCDEFGHIJKLMNOP", "sk-abc123",
+                     "A1b2" * 9, "ab" * 20 + "x"):
+            with self.subTest(frag=frag), tempfile.TemporaryDirectory() as td:
+                out = Path(td) / "out"
+                r = run_build(SAMPLE.replace("tests 41/41", frag), out)
+                self.assertNotEqual(r.returncode, 0, frag)
+                self.assertIn("line 12", r.stderr)
+                self.assertFalse((out / "index.html").exists())
+
+    def test_pipe_in_quote(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            r = run_build(SAMPLE.replace("PR 64 merged", "PR 64 | merged"), td / "a")
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("line 12", r.stderr)
+            self.assertFalse((td / "a" / "index.html").exists())
+            self.assertEqual(run_build(SAMPLE.replace("PR 64 merged", "PR 64 \\| merged"), td / "b").returncode, 0)
+            page = (td / "b" / "index.html").read_text(encoding="utf-8")
+            self.assertIn("PR 64 | merged, tests 41/41", page)
+
+    def test_bare_url_is_href(self):
+        u = "https://github.com/ITSalt/x/pulls"
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "out"
+            self.assertEqual(run_build(SAMPLE.replace("gh pr list --state merged", u + "."), out).returncode, 0)
+            self.assertIn(f'href="{u}"', (out / "index.html").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as td:  # URL inside the Quote cell too
+            out = Path(td) / "out"
+            self.assertEqual(run_build(SAMPLE.replace("tests 41/41", "see " + u), out).returncode, 0)
+            self.assertIn(f'<blockquote>&quot;PR 64 merged, see <a href="{u}">', (out / "index.html").read_text(encoding="utf-8"))
+
+    def test_link_scheme_and_email_in_url(self):
+        mirror = "[mirror](https://github.com/ITSalt/photo-check-bot-mirror)"
+        for bad in ("[mirror](javascript:alert(1))", "[x](mailto:bob@example.com)",
+                    mirror.replace("mirror)", "mirror?u=bob@example.com)")):
+            with self.subTest(bad=bad), tempfile.TemporaryDirectory() as td:
+                out = Path(td) / "out"
+                r = run_build(SAMPLE.replace(mirror, bad), out)
+                self.assertNotEqual(r.returncode, 0, bad)
+                self.assertFalse((out / "index.html").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
