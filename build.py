@@ -4,7 +4,10 @@ from __future__ import annotations
 import html, re, sys
 from pathlib import Path
 
-PREF = re.compile(r"(?<![A-Za-z0-9])(ghp_|github_pat_|sk-|xox[abprs]-|AKIA[0-9A-Z]{16})")
+PREF = re.compile(r"(?<![A-Za-z0-9])(ghp_|github_pat_|sk-[A-Za-z0-9_-]*?[A-Za-z0-9_]{20}|xox[abprs]-|AKIA[0-9A-Z]{16})")
+TGTOK = re.compile(r"(?<![0-9])[0-9]{6,12}:[A-Za-z0-9_-]{30,}")  # bot token: id:secret, secret may hold "-"
+OCT = r"(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])"
+IPV4 = re.compile(rf"(?<![\w.]){OCT}(?:\.{OCT}){{3}}(?![\w]|\.[0-9])")
 LONG = re.compile(r"(?<![A-Za-z0-9_/])[A-Za-z0-9_]{32,}(?![A-Za-z0-9_])")
 HEX = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 EMAIL = re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -23,6 +26,10 @@ def secret(line, n):
             return f"non-http link on line {n}"
     if PREF.search(line):
         return f"secret-like token on line {n}"
+    if TGTOK.search(line):
+        return f"secret-like token on line {n}"
+    if IPV4.search(line):
+        return f"IP address on line {n}"
     s = MD.sub(" ", URL.sub(" ", line))
     if any(not HEX.fullmatch(t.group()) for t in LONG.finditer(s)):
         return f"secret-like token on line {n}"

@@ -168,7 +168,7 @@ class TestBuild(unittest.TestCase):
             self.assertEqual(run_build(md, Path(td) / "out").returncode, 0)
 
     def test_real_tokens_still_fail(self):
-        for frag in ("xoxb-1234-abcd", "AKIA" + "ABCDEFGHIJKLMNOP", "sk-abc123",
+        for frag in ("xoxb-1234-abcd", "AKIA" + "ABCDEFGHIJKLMNOP", "sk-" + "abc123" * 4,
                      "A1b2" * 9, "ab" * 20 + "x"):
             with self.subTest(frag=frag), tempfile.TemporaryDirectory() as td:
                 out = Path(td) / "out"
@@ -208,6 +208,32 @@ class TestBuild(unittest.TestCase):
                 r = run_build(SAMPLE.replace(mirror, bad), out)
                 self.assertNotEqual(r.returncode, 0, bad)
                 self.assertFalse((out / "index.html").exists())
+
+
+    def test_h3b1_token_shapes_rejected(self):
+        tg = "1234567890:" + "A" * 17 + "-" + "B" * 17  # built here, never pasted
+        for frag in (tg, "bot" + tg + "/getMe", "203.0.113.7", "host 203.0.113.7.",
+                     "sk-" + "Ab1" * 8, "sk-proj-" + "Ab1" * 8, "sk-" + "ant-api03-" + "Ab1" * 8):
+            with self.subTest(frag=frag), tempfile.TemporaryDirectory() as td:
+                out = Path(td) / "out"
+                r = run_build(SAMPLE.replace("tests 41/41", frag), out)
+                self.assertNotEqual(r.returncode, 0, frag)
+                self.assertIn("line 12", r.stderr)
+                self.assertFalse((out / "index.html").exists())
+        with tempfile.TemporaryDirectory() as td:  # an IP inside a URL counts too
+            out = Path(td) / "out"
+            md = SAMPLE.replace("https://github.com/ITSalt/photo-check-bot-mirror", "http://203.0.113.7/mirror")
+            self.assertNotEqual(run_build(md, out).returncode, 0)
+            self.assertFalse((out / "index.html").exists())
+
+    def test_h3b1_near_matches_pass(self):
+        for frag in ("sk-learn", "scikit-learn", "task-runner", "mask-rcnn", "sk-learn-benchmarks",
+                     "16.10.2026", "v1.2.3", "v1.2.3.4", "1.2.3." + "456", "12:30", "PR 64: 41/41",
+                     "ITSalt/looktwin-receipts"):
+            with self.subTest(frag=frag), tempfile.TemporaryDirectory() as td:
+                out = Path(td) / "out"
+                r = run_build(SAMPLE.replace("tests 41/41", frag), out)
+                self.assertEqual(r.returncode, 0, frag + " " + r.stderr)
 
 
 if __name__ == "__main__":

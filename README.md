@@ -9,4 +9,4 @@ The page links to public code snapshots, contributor records and the gold set (I
 
 Written on the board (task H3), see CONTRIBUTORS.md.
 
-Published copy note: in `test_build.py` the fake token on one line is spelled as `"ghp" + "_EXAMPLE…"` so that secret scanners do not flag this repository; the test is unchanged otherwise. Accepted on the board as sha256 783bd079…9b5c.
+Published copy note: in `test_build.py` a few fixtures are spelled in pieces (`"ghp" + "_EXAMPLE…"`, `"sk-" + "ant-api03-"`, `"1.2.3." + "456"`) so that secret scanners do not flag this repository; the tests are unchanged otherwise. Current version: H3b-1 accepted 17.10.2026, build.py sha256 83ece731…, 17 tests.
