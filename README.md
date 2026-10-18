@@ -9,4 +9,8 @@ The page links to public code snapshots, contributor records and the gold set (I
 
 Written on the board (task H3), see CONTRIBUTORS.md.
 
-Published copy note: in `test_build.py` a few fixtures are spelled in pieces (`"ghp" + "_EXAMPLE…"`, `"sk-" + "ant-api03-"`, `"1.2.3." + "456"`) so that secret scanners do not flag this repository; the tests are unchanged otherwise. Current version: H3b-1 accepted 17.10.2026, build.py sha256 83ece731…, 17 tests.
+Published copy note: in `test_build.py` a few fixtures are spelled in pieces (`"ghp" + "_EXAMPLE…"`, `"sk-" + "ant-api03-"`, `"1.2.3." + "456"`) so that secret scanners do not flag this repository; the tests are unchanged otherwise. Current version: H3b-1 accepted 17.10.2026, build.py sha256 83ece731…; tests 18–19 added 18.10.2026, 19 tests.
+
+Known gaps (on purpose, pinned so nobody counts them as covered):
+- An `sk-` key whose dash-separated runs are all shorter than 20 characters is not caught (about 4% of short `sk-proj-` keys of 40 characters in our measurement).
+- A four-part dotted number after a space ("release" plus N.N.N.N) is rejected on purpose: in a receipt it is likelier a host than a version. The same number with a "v" in front builds.

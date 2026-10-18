@@ -236,5 +236,28 @@ class TestBuild(unittest.TestCase):
                 self.assertEqual(r.returncode, 0, frag + " " + r.stderr)
 
 
+    def test_h3b1_dash_in_key_body(self):  # test 18: the hole glitchfox's sk- rule closed
+        key = "sk-" + "proj-" + "Ab1" * 4 + "-" + "Cd2_" * 6  # built here, never pasted
+        mirror = "https://github.com/ITSalt/photo-check-bot-mirror"
+        for where, md in (("plain", SAMPLE.replace("tests 41/41", key)),
+                          ("link", SAMPLE.replace(mirror, mirror + "?k=" + key))):
+            with self.subTest(where=where), tempfile.TemporaryDirectory() as td:
+                out = Path(td) / "out"
+                r = run_build(md, out)
+                self.assertNotEqual(r.returncode, 0, where)
+                self.assertIn("line 12", r.stderr)
+                self.assertFalse((out / "index.html").exists())
+
+    def test_four_part_number_after_space_is_host(self):  # on purpose: likelier a host than a version
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "out"
+            r = run_build(SAMPLE.replace("tests 41/41", "release " + ".".join("1234")), out)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("line 12", r.stderr)
+            self.assertFalse((out / "index.html").exists())
+        with tempfile.TemporaryDirectory() as td:  # the v-prefixed form stays a version
+            self.assertEqual(run_build(SAMPLE.replace("tests 41/41", "v1.2.3.4"), Path(td) / "out").returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
