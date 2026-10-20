@@ -258,6 +258,42 @@ class TestBuild(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:  # the v-prefixed form stays a version
             self.assertEqual(run_build(SAMPLE.replace("tests 41/41", "v1.2.3.4"), Path(td) / "out").returncode, 0)
 
+    # H3b-2, secrets inside URLs: every value is built here, never pasted
+    A, H, H2, B = "A" * 32, "a" * 40, "b" * 40, "https://example.com"
+    G = "https://github.com/ITSalt/"
+
+    def test_h3b2_secret_in_url_rejected(self):
+        A, H, B = self.A, self.H, self.B
+        for url in (B + "/" + A, B + "/" + A + "/x", B + "/x#/" + A, B + "/x?t=" + A, B + "/x#" + A,
+                    B + "/x-" + A, B + "/x%2F" + A, B + "/x?next=/commit/" + H,
+                    B + "/x#/blob/" + H + "/README.md", B + "/x%2Fcommit%2F" + H,
+                    B + "/x?k" + "ey=" + "A" * 40, B + "/x?to" + "ken=" + "deadbeef" * 8,
+                    B + "/o/r/blob/" + H + "/x?ref=" + H,          # exempt by position, not by value
+                    "https://raw.githubusercontent.com/o/r/" + H + "/build.py",
+                    B + "/o/r/commit/" + "A" * 40,                  # link SHAs are lowercase
+                    "https://github.com/o/r/blob/main/tests/test_secret_scanner_handles_percent_encoding.py",
+                    "https://gist.github.com/u/" + "0123456789abcdef" * 2,  # known false positives
+                    B + "/o/r/compare/main..." + H, B + "/o/r/blob/%61" + "a" * 39):
+            with self.subTest(url=url), tempfile.TemporaryDirectory() as td:
+                out = Path(td) / "out"
+                r = run_build(SAMPLE.replace("tests 41/41", "see " + url), out)
+                self.assertNotEqual(r.returncode, 0, url)
+                self.assertIn("line 12", r.stderr)
+                self.assertFalse((out / "index.html").exists())
+
+    def test_h3b2_links_still_pass(self):  # pass before and after H3b-2
+        H, H2, B, G = self.H, self.H2, self.B, self.G
+        sha = "17f8998bb4aaae9e" + "0c67ce6518226ce713d1b712"  # real commit, split on purpose
+        for url in (B + "/o/r/blob/" + H + "/README.md", B + "/o/r/commit/" + "c" * 64,
+                    G + "looktwin-receipts/blob/" + sha + "/build.py#L11-L34",
+                    G + "photo-check-gold/blob/e40e566/README.md", G + "looktwin-receipts",
+                    B + "/o/r/commit/" + H + ".patch", B + "/o/r/commit/" + H + ".diff",
+                    B + "/o/r/compare/" + H + "..." + H2, B + "/o/r/compare/" + H + ".." + H2,
+                    B + "/o/r/blame/" + H + "/build.py", B + "/o/r/pull/7/commits/" + H):
+            with self.subTest(url=url), tempfile.TemporaryDirectory() as td:
+                r = run_build(SAMPLE.replace("tests 41/41", "see " + url), Path(td) / "out")
+                self.assertEqual(r.returncode, 0, url + " " + r.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

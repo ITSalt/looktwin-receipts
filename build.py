@@ -3,6 +3,7 @@
 from __future__ import annotations
 import html, re, sys
 from pathlib import Path
+from urllib.parse import unquote
 
 PREF = re.compile(r"(?<![A-Za-z0-9])(ghp_|github_pat_|sk-[A-Za-z0-9_-]*?[A-Za-z0-9_]{20}|xox[abprs]-|AKIA[0-9A-Z]{16})")
 TGTOK = re.compile(r"(?<![0-9])[0-9]{6,12}:[A-Za-z0-9_-]{30,}")  # bot token: id:secret, secret may hold "-"
@@ -14,6 +15,25 @@ EMAIL = re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z
 MD = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)")
 URL = re.compile(r"https?://[^\s)\]>|<\"]+")
 PIPE = re.compile(r"(?<!\\)\|")
+# H3b-2: inside a URL "/" does not shield a run; a 40/64-hex run is exempt only by position
+LONGU = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z0-9_]{32,}(?![A-Za-z0-9_])")
+SHA = r"([0-9a-f]{64}|[0-9a-f]{40})(?![A-Za-z0-9_])"
+KEYSEG = re.compile(r"/(?:commit|blob|tree|raw|blame|commits)/" + SHA)
+CMP = re.compile(r"/compare/" + SHA + r"(?:\.\.\.?" + SHA + ")?")
+
+def url_secret(u):
+    """Scan the percent-decoded URL after the scheme. A hex run is exempt only in the
+    literal path (before ? and #), right after /keyword/ or inside /compare/A..B, and
+    only when that path has no % escape, so %2F never makes a new segment."""
+    rest = u.split("://", 1)[1]
+    path = re.split(r"[?#]", rest, maxsplit=1)[0]
+    ok = set()
+    if "%" not in path:  # path is then a prefix of the decoded text, spans line up
+        for m in KEYSEG.finditer(path):
+            ok.add(m.span(1))
+        for m in CMP.finditer(path):
+            ok.update(m.span(g) for g in (1, 2) if m.group(g))
+    return any(m.span() not in ok for m in LONGU.finditer(unquote(rest)))
 
 def die(m):
     print(m, file=sys.stderr); sys.exit(1)
@@ -30,6 +50,8 @@ def secret(line, n):
         return f"secret-like token on line {n}"
     if IPV4.search(line):
         return f"IP address on line {n}"
+    if any(url_secret(m.group()) for m in URL.finditer(line)):
+        return f"secret-like token in a URL on line {n}"
     s = MD.sub(" ", URL.sub(" ", line))
     if any(not HEX.fullmatch(t.group()) for t in LONG.finditer(s)):
         return f"secret-like token on line {n}"
