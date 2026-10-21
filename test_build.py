@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parent
 BUILD = ROOT / "build.py"
@@ -293,6 +294,33 @@ class TestBuild(unittest.TestCase):
             with self.subTest(url=url), tempfile.TemporaryDirectory() as td:
                 r = run_build(SAMPLE.replace("tests 41/41", "see " + url), Path(td) / "out")
                 self.assertEqual(r.returncode, 0, url + " " + r.stderr)
+
+    # H3b-3, base64 values with "/" or "+": built from pieces so scanners do not flag the file
+    K = "wJalrXUtnFEMI" + "/K7MDENG/" + "bPxRfiCYEXAMPLEKEY"
+    Bv = "TgdAhWK+24tgzgXB3s" + "/jrRa3IjCWfeAfZAt+Rym0n84="
+
+    def test_h3b3_base64_slash_plus_rejected(self):
+        K, Bv, B = self.K, self.Bv, self.B
+        P = K.replace("/", "+")
+        for val in ("key " + K, B + "/x?secret=" + K, B + "/x?secret=" + quote(K, safe=""), "key " + P,
+                    B + "/x?s=" + quote(P, safe=""), "token " + Bv, B + "/cb?sig=" + Bv,
+                    "run " + K, B + "/x#" + K, B + "/x/" + P):  # line 12 is a ledger row: all sit in a cell
+            with self.subTest(val=val), tempfile.TemporaryDirectory() as td:
+                out = Path(td) / "out"
+                r = run_build(SAMPLE.replace("tests 41/41", "see " + val), out)
+                self.assertNotEqual(r.returncode, 0, val)
+                self.assertIn("line 12", r.stderr)
+                self.assertFalse((out / "index.html").exists())
+
+    def test_h3b3_paths_and_versions_still_pass(self):
+        H, B = self.H, self.B
+        for val in (B + "/o/r/blob/" + H + "/README.md", "growth/h3-accepted/build.py",
+                    "management/heads/community-tools/h3b2-accept/run.sh", "2026/10/20", "v3.2/v3.3",
+                    "a+b=c", "commit " + H, "see board-tools/drafts/growth-share-v33-unmeasured.md",
+                    B + "/o/r/compare/" + H[:12] + "..." + H[12:24], "token " + "deadbeef" * 8):
+            with self.subTest(val=val), tempfile.TemporaryDirectory() as td:
+                r = run_build(SAMPLE.replace("tests 41/41", "see " + val), Path(td) / "out")
+                self.assertEqual(r.returncode, 0, val + " " + r.stderr)
 
 
 if __name__ == "__main__":

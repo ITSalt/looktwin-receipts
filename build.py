@@ -20,6 +20,15 @@ LONGU = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z0-9_]{32,}(?![A-Za-z0-9_])")
 SHA = r"([0-9a-f]{64}|[0-9a-f]{40})(?![A-Za-z0-9_])"
 KEYSEG = re.compile(r"/(?:commit|blob|tree|raw|blame|commits)/" + SHA)
 CMP = re.compile(r"/compare/" + SHA + r"(?:\.\.\.?" + SHA + ")?")
+# H3b-3: a base64-alphabet run with "/" or "+" inside, 32+ long, holding upper, lower and digit
+B64 = re.compile(r"(?<![A-Za-z0-9_+/])[A-Za-z0-9_+/]{32,}={0,2}(?![A-Za-z0-9_+/=])")
+
+def b64_secret(t):
+    for m in B64.finditer(t):
+        v = m.group()
+        if ("/" in v or "+" in v) and re.search("[A-Z]", v) and re.search("[a-z]", v) and re.search("[0-9]", v):
+            return True
+    return False
 
 def url_secret(u):
     """Scan the percent-decoded URL after the scheme. A hex run is exempt only in the
@@ -33,7 +42,11 @@ def url_secret(u):
             ok.add(m.span(1))
         for m in CMP.finditer(path):
             ok.update(m.span(g) for g in (1, 2) if m.group(g))
-    return any(m.span() not in ok for m in LONGU.finditer(unquote(rest)))
+    if any(m.span() not in ok for m in LONGU.finditer(unquote(rest))):
+        return True
+    # H3b-3: query and fragment are values, not paths: check them decoded; each path segment too
+    tail = rest[len(path):]
+    return b64_secret(unquote(tail)) or any(b64_secret(unquote(seg)) for seg in path.split("/"))
 
 def die(m):
     print(m, file=sys.stderr); sys.exit(1)
@@ -54,6 +67,8 @@ def secret(line, n):
         return f"secret-like token in a URL on line {n}"
     s = MD.sub(" ", URL.sub(" ", line))
     if any(not HEX.fullmatch(t.group()) for t in LONG.finditer(s)):
+        return f"secret-like token on line {n}"
+    if b64_secret(s):
         return f"secret-like token on line {n}"
     return None
 
