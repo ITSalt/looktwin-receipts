@@ -312,6 +312,25 @@ class TestBuild(unittest.TestCase):
                 self.assertIn("line 12", r.stderr)
                 self.assertFalse((out / "index.html").exists())
 
+    def test_h3b4_aiza_dash_rejected(self):
+        E = "AIza" + "-Sy9kQ2xLm7Vt3Rw8-z4Hc6Nj1Ue5Ya0Fg-"
+        W = "AIza" + "Sy7kQ--xLm2Vt9Rw4Pz8Hc3Nj6Ue1Ya5Fgh"
+        plain = "AIza" + "Sy9kQ2xLm7Vt3Rw8z4Hc6Nj1Ue5Ya0Fg"
+        for val in ("key " + E, "key " + W, "key " + plain):
+            with self.subTest(val=val), tempfile.TemporaryDirectory() as td:
+                out = Path(td) / "out"
+                r = run_build(SAMPLE.replace("tests 41/41", val), out)
+                self.assertNotEqual(r.returncode, 0, val)
+                self.assertIn("line 12", r.stderr)
+                self.assertFalse((out / "index.html").exists())
+
+    def test_h3b4_aiza_longer_run_still_passes(self):
+        pas53 = "AIzaAIza-AIzaAIza-" + "AIzaAIza-AIzaAIza-" + "AIzaAIza-AIzaAIza"
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "out"
+            r = run_build(SAMPLE.replace("tests 41/41", "key " + pas53), out)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
     def test_h3b3_paths_and_versions_still_pass(self):
         H, B = self.H, self.B
         for val in (B + "/o/r/blob/" + H + "/README.md", "growth/h3-accepted/build.py",
