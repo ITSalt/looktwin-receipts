@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import importlib.util
 import subprocess
 import tempfile
 import unittest
@@ -341,6 +342,75 @@ class TestBuild(unittest.TestCase):
                 r = run_build(SAMPLE.replace("tests 41/41", "see " + val), Path(td) / "out")
                 self.assertEqual(r.returncode, 0, val + " " + r.stderr)
 
+
+
+class TestH3b5Underscore(unittest.TestCase):
+    """H3b-5: uppercase sk- branch accepts underscore; optional Title-Case guard."""
+
+    def _load_build(self):
+        spec = importlib.util.spec_from_file_location("build_h3b5", BUILD)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def _fixtures(self):
+        P = "sk-" + "proj-"
+        K = P + "Ab3dE-fG7hJ2kL9-mN4pQ8rS1-tU6vW0xY5z-Bc2D"
+        L = "sk-" + "T3BlbkFJ-x9Qa2Lm7Vt4Rw8Pz-1Hc6Nj5Ue0Ya3Fg-Kd7Sb2Wq"
+        R = P + "Ab3dE--fG7hJ2kL9mN4p-Q8rS1tU6vW0xY5z-Bc"
+        S = P + "-x9Qa2Lm7Vt4Rw8Pz1Hc-6Nj5Ue0Ya3Fg7Kd2-"
+        Q = P + "d_dnWk6ie15HsJ-Bc-gwF0N30VWXmNrOUEZZr-kQ"
+        U = "https://example.com"
+        rej = [f"key {K}", f"{U}/v1?key={K}", f"{U}/v1?key=" + quote(K, safe=""),
+               f"| run | {L} |", f"{U}/v1#{L}", f"key {R}", f"{U}/v1/{S}/y", f"key {Q}"]
+        pas = ["sk-learn", "sk-" + "proj-short",
+               "sk-learn-is-short-for-scikit-learn-in-these-notes",
+               "sk-2026-10-22-build-17-release-notes",
+               "task-runner-v2-config", "growth/h3-accepted/build.py",
+               "token " + "deadbeef" * 8,
+               "see board-tools/drafts/growth-v35-accept.md"]
+        return rej, pas
+
+    def test_h3b5_rej_all_eight(self):
+        b = self._load_build()
+        for u in self._fixtures()[0]:
+            err = b.secret(f"x {u} y", 7)
+            self.assertEqual(err, "secret-like token on line 7", u)
+
+    def test_h3b5_pas_all_eight(self):
+        b = self._load_build()
+        for u in self._fixtures()[1]:
+            self.assertIsNone(b.secret(f"x {u} y", 7), u)
+
+    def test_h3b5_titlecase_slug_guard(self):
+        b = self._load_build()
+        fp = "sk-My-Branch-Name-Is-Fine-Here-Today"
+        self.assertIsNone(b.secret(f"x {fp} y", 7), fp)
+
+    def test_h3b5_underscore_key_rejected_via_build(self):
+        Q = "sk-" + "proj-" + "d_dnWk6ie15HsJ-Bc-gwF0N30VWXmNrOUEZZr-kQ"
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "out"
+            r = run_build(SAMPLE.replace("tests 41/41", "key " + Q), out)
+            self.assertNotEqual(r.returncode, 0, r.stderr)
+            self.assertIn("line 12", r.stderr)
+            self.assertFalse((out / "index.html").exists())
+
+    def test_h3b5_slug_then_key_rejected(self):
+        """Slug before a real key must not mask the second PREF match (looktwin #99494)."""
+        b = self._load_build()
+        slug = "sk-My-Branch-Name-Is-Fine-Here-Today"
+        K = "sk-" + "abc123" * 5
+        self.assertEqual(
+            b.secret(f"x {slug} {K} y", 7),
+            "secret-like token on line 7",
+            "slug-then-key",
+        )
+        self.assertEqual(
+            b.secret(f"x {slug} sk-" + "abc123" * 5 + " y", 7),
+            "secret-like token on line 7",
+            "slug-then-fake-run",
+        )
 
 if __name__ == "__main__":
     unittest.main()

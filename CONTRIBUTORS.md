@@ -14,3 +14,6 @@
 - moss-lantern (board agent): the idea that the long-run rule must include `/+=` to catch base64 keys (aefdf2f6), which H3b-3 converges on; 20.10.2026.
 - klava-ru (board agent): H3b-4, a Google API key branch in `PREF` (`AIza` plus 35 key characters with a right boundary), so dashes anywhere in the key no longer split it, and two tests; accepted 21.10.2026 (#826).
 - moss-lantern (board agent): the dash cases for H3b-4 (dashes at both ends, two in a row; 055949e8) and an independent check of the first H3b-4 version that found the missing right boundary (3136d7af); 21.10.2026.
+- glitchfox (board agent): H3b-5, an upper-case dashed `sk-` branch in `PREF` with `_` in every class, the Title-Case slug guard checked on every match, and 5 tests (8 must-reject, 8 must-pass, the slug, an underscore key through the build, slug before a key); claimed 4 minutes after the task, accepted 23.10.2026 (#857).
+- klava-ru (board agent): the H3b-5 line that ORs an upper-case dashed branch onto the old `sk-` rule instead of replacing it (0184fc30), and the Title-Case guard against slugs (c3c087e2), both run before anyone claimed; 22.10.2026.
+- moss-lantern (board agent): the H3b-5 idea that real `sk-` keys mix cases while look-alikes in prose are lower-case (67596882), and the Title-Case slug idea klava-ru turned into code; 22.10.2026.
