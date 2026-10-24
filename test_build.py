@@ -412,5 +412,67 @@ class TestH3b5Underscore(unittest.TestCase):
             "slug-then-fake-run",
         )
 
+
+class H3b6EncodedPrefix(unittest.TestCase):
+    """H3b-6 (theone): a prefix percent-encoded inside a link is still a key."""
+    P = "sk-" + "proj-"
+    T = P + "Ab1-" * 9 + "Cd2E"
+    K = P + "Ab3dE-fG7hJ2kL9-mN4pQ8rS1-tU6vW0xY5z-Bc2D"
+    G = "AIza" + "Sy3Kd-9Qm_7Vt2Lw8Pz-1Hc6Nj5Ue0Ya3Fg"
+    W = "AKIA" + "Q3ZT7XK2M9WB4RJD"
+    X = "xoxb" + "-" + "482915736021-" + "Hc6Nj5Ue0Ya3Fg7Kd2Sb8Wq1"
+    H = "ghp" + "_" + "Ab3dEfG7hJ2kL9mN4pQ8rS1tU6vW0xY5zBc2"
+    U = "https://example.com/v1?key="
+    R = "https://github.com/ITSalt/looktwin-receipts"
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("build_h3b6", BUILD)
+        cls.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.mod)
+
+    def rej(self):
+        U, T, K, G, W, X, H = self.U, self.T, self.K, self.G, self.W, self.X, self.H
+        return [U + T.replace("sk-", "sk%2D", 1), U + K.replace("sk-", "sk%2D", 1),
+                U + G.replace("AIza", "AIz%61", 1), U + W.replace("AKIA", "AKI%41", 1),
+                U + X.replace("xoxb-", "xoxb%2D", 1), U + H.replace("ghp_", "ghp%5F", 1),
+                "https://example.com/v1/" + W.replace("AKIA", "%41KIA", 1) + "/y",
+                "https://example.com/v1#t=" + X.replace("xoxb-", "%78oxb-", 1),
+                "https://example.com/b?t=" + "123456789" + "%3A" + "Ab3dE-fG7hJ2kL9mN4pQ8rS1tU6vW0x"]
+
+    def pas(self):
+        R = self.R
+        return [R + "/commit/" + "aaa6d438daa00a9d75228b0b4ddce231d2ac3789", R + "/blob/52527bb/README.md",
+                R + "/compare/aaa6d43...52527bb", "https://example.com/search?q=sk%2Dlearn",
+                "https://example.com/docs?page=task%2Drunner%2Dv2%2Dconfig",
+                "https://example.com/?b=sk%2DMy-Branch-Name-Is-Fine-Here-Today",
+                "https://example.com/wiki/AKIA%20prefix%20explained", R + "/blob/52527bb/docs/a%20b.md"]
+
+    def test_encoded_prefix_rejected_on_line_7(self):
+        for u in self.rej():
+            with self.subTest(u=u[:40]):
+                e = self.mod.secret(f"x {u} y", 7)
+                self.assertIsNotNone(e)
+                self.assertIn("line 7", e)
+
+    def test_benign_encoded_links_pass(self):
+        for u in self.pas():
+            with self.subTest(u=u[:40]):
+                self.assertIsNone(self.mod.secret(f"x {u} y", 7))
+
+    def test_markdown_link_target_rejected(self):
+        u = self.U + self.W.replace("AKIA", "AKI%41", 1)
+        self.assertIsNotNone(self.mod.secret(f"see [docs]({u})", 3))
+
+    def test_page_with_encoded_key_builds_nothing(self):
+        u = self.rej()[0]
+        md = SAMPLE.replace("[mirror](https://github.com/ITSalt/photo-check-bot-mirror)", f"[mirror]({u})")
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "week.md"; p.write_text(md, encoding="utf-8")
+            r = subprocess.run(["python3", str(BUILD), str(p), str(Path(d) / "out")], capture_output=True, text=True)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("line", r.stderr)
+            self.assertFalse((Path(d) / "out" / "index.html").exists())
+
 if __name__ == "__main__":
     unittest.main()

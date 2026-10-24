@@ -36,13 +36,18 @@ def url_secret(u):
     only when that path has no % escape, so %2F never makes a new segment."""
     rest = u.split("://", 1)[1]
     path = re.split(r"[?#]", rest, maxsplit=1)[0]
+    # H3b-6: a vendor prefix spelled with escapes (sk%2D, AIz%61, %41KIA, ghp%5F) is
+    # still that prefix once decoded: run the prefix and bot-token rules on decoded text
+    dec = unquote(rest)
+    if any(not sk_titlecase_slug(m.group(0)) for m in PREF.finditer(dec)) or TGTOK.search(dec):
+        return True
     ok = set()
     if "%" not in path:  # path is then a prefix of the decoded text, spans line up
         for m in KEYSEG.finditer(path):
             ok.add(m.span(1))
         for m in CMP.finditer(path):
             ok.update(m.span(g) for g in (1, 2) if m.group(g))
-    if any(m.span() not in ok for m in LONGU.finditer(unquote(rest))):
+    if any(m.span() not in ok for m in LONGU.finditer(dec)):
         return True
     # H3b-3: query and fragment are values, not paths: check them decoded; each path segment too
     tail = rest[len(path):]
