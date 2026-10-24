@@ -30,6 +30,8 @@ def b64_secret(t):
             return True
     return False
 
+DECODE_CAP = 4  # H3b-7: percent-decoding steps before a URL that still decodes is rejected
+
 def url_secret(u):
     """Scan the percent-decoded URL after the scheme. A hex run is exempt only in the
     literal path (before ? and #), right after /keyword/ or inside /compare/A..B, and
@@ -39,7 +41,14 @@ def url_secret(u):
     # H3b-6: a vendor prefix spelled with escapes (sk%2D, AIz%61, %41KIA, ghp%5F) is
     # still that prefix once decoded: run the prefix and bot-token rules on decoded text
     dec = unquote(rest)
-    if any(not sk_titlecase_slug(m.group(0)) for m in PREF.finditer(dec)) or TGTOK.search(dec):
+    # H3b-7: not only once (sk%252D, sk%25252D, ...): decode up to DECODE_CAP times, run both
+    # rules on every step; a URL that still decodes after the cap fails closed
+    cur = rest
+    for _ in range(DECODE_CAP):
+        cur = unquote(cur)
+        if any(not sk_titlecase_slug(m.group(0)) for m in PREF.finditer(cur)) or TGTOK.search(cur):
+            return True
+    if unquote(cur) != cur:
         return True
     ok = set()
     if "%" not in path:  # path is then a prefix of the decoded text, spans line up

@@ -474,5 +474,61 @@ class H3b6EncodedPrefix(unittest.TestCase):
             self.assertIn("line", r.stderr)
             self.assertFalse((Path(d) / "out" / "index.html").exists())
 
+
+class H3b7FixpointDecode(unittest.TestCase):
+    """H3b-7 (looktwin-feedback #100990): a prefix escaped more than once is still a key."""
+    P = "sk-" + "proj-"
+    K = P + "Ab3dE-fG7hJ2kL9-mN4pQ8rS1-tU6vW0xY5z-Bc2D"
+    W = "AKIA" + "Q3ZT7XK2M9WB4RJD"
+    X = "xoxb" + "-" + "482915736021-" + "Hc6Nj5Ue0Ya3Fg7Kd2Sb8Wq1"
+    U = "https://example.com/v1?key="
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("build_h3b7", BUILD)
+        cls.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.mod)
+
+    @staticmethod
+    def nest(s, n):
+        """Escape once, then re-escape every % another n-1 times: depth n."""
+        for _ in range(n - 1):
+            s = s.replace("%", "%" + "25")
+        return s
+
+    def rej(self):
+        U, K, W, X, d = self.U, self.K, self.W, self.X, "%" + "2D"
+        return [U + K.replace("sk-", "sk" + self.nest(d, 2), 1), U + K.replace("sk-", "sk" + self.nest(d, 3), 1),
+                U + W.replace("AKIA", "AKI" + self.nest("%" + "41", 2), 1),
+                U + X.replace("xoxb-", "xoxb" + self.nest(d, 3), 1),
+                "https://example.com/b?t=" + "123456789" + self.nest("%" + "3A", 2) + "Ab3dE-fG7hJ2kL9mN4pQ8rS1tU6vW0x",
+                U + K.replace("sk-", "sk" + self.nest(d, 6), 1)]
+
+    def pas(self):
+        p = "%" + "25"
+        return ["https://example.com/report?off=100" + p, "https://example.com/s?q=50" + p + "25+done",
+                "https://example.com/a%2Fb" + p + "2Fc", "https://example.com/wiki/100" + p + "_Pure",
+                "https://example.com/search?q=sk" + p + "2Dlearn",
+                "https://example.com/d?p=task" + p + "2Drunner" + p + "2Dv2"]
+
+    def test_nested_prefix_rejected_on_line_7(self):
+        for u in self.rej():
+            with self.subTest(u=u[:44]):
+                e = self.mod.secret(f"x {u} y", 7)
+                self.assertIsNotNone(e)
+                self.assertIn("line 7", e)
+
+    def test_literal_percent_links_pass(self):
+        for u in self.pas():
+            with self.subTest(u=u):
+                self.assertIsNone(self.mod.secret(f"x {u} y", 7))
+
+    def test_cap_bounds_benign_nesting(self):
+        cap = self.mod.DECODE_CAP
+        ok = "https://example.com/s?q=" + self.nest("a%" + "2Fb", cap)
+        deep = "https://example.com/s?q=" + self.nest("a%" + "2Fb", cap + 1)
+        self.assertIsNone(self.mod.secret(f"x {ok} y", 7))
+        self.assertIn("line 7", self.mod.secret(f"x {deep} y", 7))
+
 if __name__ == "__main__":
     unittest.main()
