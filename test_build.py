@@ -530,5 +530,47 @@ class H3b7FixpointDecode(unittest.TestCase):
         self.assertIsNone(self.mod.secret(f"x {ok} y", 7))
         self.assertIn("line 7", self.mod.secret(f"x {deep} y", 7))
 
+class H3b8DecodedLongRuns(unittest.TestCase):
+    """H3b-8 (naya-ops): the long-run and base64 rules get the same decoding steps as the prefix rules."""
+    L = "Ab3dEfG7hJ2kL9mN4pQ8" + "rS1tU6vW0xY5zBc2Dq7Lk3"
+    B = "Ab3dEfG7hJ/2kL9mN4pQ8rS1" + "tU6vW+0xY5zBc2Dq7Lk3Hs9"
+    U = "https://example.com/v1?key="
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("build_h3b8", BUILD)
+        cls.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.mod)
+
+    nest = staticmethod(H3b7FixpointDecode.nest)
+
+    def mid(self, k, depth, pos=20):
+        """Escape the character at pos, at the given depth."""
+        return k[:pos] + self.nest("%" + format(ord(k[pos]), "02X"), depth) + k[pos + 1:]
+
+    def rej(self):
+        U, L, B = self.U, self.L, self.B
+        return [U + self.mid(L, 2), U + self.mid(L, 3), U + self.mid(L, 4),
+                U + self.mid(B, 2), "https://example.com/p/" + self.mid(L, 2) + "/x",
+                "https://example.com/v1#t=" + self.mid(B, 3)]
+
+    def test_twice_escaped_long_runs_rejected_on_line_7(self):
+        for u in self.rej():
+            with self.subTest(u=u[:44]):
+                e = self.mod.secret(f"x {u} y", 7)
+                self.assertIsNotNone(e)
+                self.assertIn("line 7", e)
+
+    def test_raw_and_once_escaped_still_rejected(self):
+        for k in (self.L, self.B):
+            for u in (self.U + k, self.U + self.mid(k, 1)):
+                with self.subTest(u=u[:44]):
+                    self.assertIn("line 7", self.mod.secret(f"x {u} y", 7))
+
+    def test_hex_key_segment_still_exempt(self):
+        sha = "0123456789abcdef" * 2 + "01234567"
+        u = "https://github.com/o/r/commit/" + sha
+        self.assertIsNone(self.mod.secret(f"x {u} y", 7))
+
 if __name__ == "__main__":
     unittest.main()

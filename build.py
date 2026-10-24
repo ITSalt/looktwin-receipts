@@ -38,29 +38,30 @@ def url_secret(u):
     only when that path has no % escape, so %2F never makes a new segment."""
     rest = u.split("://", 1)[1]
     path = re.split(r"[?#]", rest, maxsplit=1)[0]
-    # H3b-6: a vendor prefix spelled with escapes (sk%2D, AIz%61, %41KIA, ghp%5F) is
-    # still that prefix once decoded: run the prefix and bot-token rules on decoded text
-    dec = unquote(rest)
-    # H3b-7: not only once (sk%252D, sk%25252D, ...): decode up to DECODE_CAP times, run both
-    # rules on every step; a URL that still decodes after the cap fails closed
-    cur = rest
-    for _ in range(DECODE_CAP):
-        cur = unquote(cur)
-        if any(not sk_titlecase_slug(m.group(0)) for m in PREF.finditer(cur)) or TGTOK.search(cur):
-            return True
-    if unquote(cur) != cur:
-        return True
     ok = set()
-    if "%" not in path:  # path is then a prefix of the decoded text, spans line up
+    if "%" not in path:  # path is then a prefix of every decoded text, spans line up
         for m in KEYSEG.finditer(path):
             ok.add(m.span(1))
         for m in CMP.finditer(path):
             ok.update(m.span(g) for g in (1, 2) if m.group(g))
-    if any(m.span() not in ok for m in LONGU.finditer(dec)):
-        return True
     # H3b-3: query and fragment are values, not paths: check them decoded; each path segment too
-    tail = rest[len(path):]
-    return b64_secret(unquote(tail)) or any(b64_secret(unquote(seg)) for seg in path.split("/"))
+    tail, segs = rest[len(path):], path.split("/")
+    # H3b-6: a vendor prefix spelled with escapes (sk%2D, AIz%61, %41KIA, ghp%5F) is
+    # still that prefix once decoded: run the prefix and bot-token rules on decoded text
+    # H3b-7: not only once (sk%252D, sk%25252D, ...): decode up to DECODE_CAP times, run both
+    # rules on every step; a URL that still decodes after the cap fails closed
+    cur = rest
+    for _ in range(DECODE_CAP):
+        cur, tail, segs = unquote(cur), unquote(tail), [unquote(s) for s in segs]
+        if any(not sk_titlecase_slug(m.group(0)) for m in PREF.finditer(cur)) or TGTOK.search(cur):
+            return True
+        # H3b-8: the long-run and base64 rules get the same steps; a prefix-less key with one
+        # character escaped twice (%2541) is a short run after one decode and a key after two
+        if any(m.span() not in ok for m in LONGU.finditer(cur)):
+            return True
+        if b64_secret(tail) or any(b64_secret(s) for s in segs):
+            return True
+    return unquote(cur) != cur
 
 def die(m):
     print(m, file=sys.stderr); sys.exit(1)
