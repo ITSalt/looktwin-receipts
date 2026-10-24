@@ -531,7 +531,10 @@ class H3b7FixpointDecode(unittest.TestCase):
         self.assertIn("line 7", self.mod.secret(f"x {deep} y", 7))
 
 class H3b8DecodedLongRuns(unittest.TestCase):
-    """H3b-8 (naya-ops): the long-run and base64 rules get the same decoding steps as the prefix rules."""
+    """H3b-8 (naya-ops, with glitchfox #101036/#101201): the long-run and base64 rules get the
+    same decoding steps as the prefix rules, including shapes that never contain the literal
+    substring "%25" anywhere in the URL (glitchfox proved no fixed depth bound exists for that
+    substring, seq 101201 -- a filter on "%25" is not a safe shortcut at any depth)."""
     L = "Ab3dEfG7hJ2kL9mN4pQ8" + "rS1tU6vW0xY5zBc2Dq7Lk3"
     B = "Ab3dEfG7hJ/2kL9mN4pQ8rS1" + "tU6vW+0xY5zBc2Dq7Lk3Hs9"
     U = "https://example.com/v1?key="
@@ -545,14 +548,37 @@ class H3b8DecodedLongRuns(unittest.TestCase):
     nest = staticmethod(H3b7FixpointDecode.nest)
 
     def mid(self, k, depth, pos=20):
-        """Escape the character at pos, at the given depth."""
+        """Escape the character at pos, at the given depth, standard nesting (%25 appears)."""
         return k[:pos] + self.nest("%" + format(ord(k[pos]), "02X"), depth) + k[pos + 1:]
+
+    @staticmethod
+    def no25(s):
+        """Keep '%' literal, escape every other character as %XX. One more unquote() layer
+        than the input, and the result never contains the literal substring "%25"."""
+        return "".join("%" if c == "%" else "%%%02X" % ord(c) for c in s)
+
+    def mid_no25(self, k, shape, pos=20):
+        """shape 1: escape-no25 applied twice to the depth-1 form. shape 2: escape-no25 applied
+        once to the standard depth-2 form. Both take 3 unquote() passes, neither has "%25"."""
+        d1 = "%" + format(ord(k[pos]), "02X")
+        esc = self.no25(self.no25(d1)) if shape == 1 else self.no25(self.nest(d1, 2))
+        assert "%25" not in esc
+        return k[:pos] + esc + k[pos + 1:]
+
+    def mixed_depth(self, k, pos_a, depth_a, pos_b, depth_b):
+        """Two characters of the same key escaped at different depths (splice the higher index
+        first, so the earlier splice position stays valid)."""
+        hi, lo = sorted(((pos_a, depth_a), (pos_b, depth_b)), reverse=True)
+        s = k[:hi[0]] + self.nest("%" + format(ord(k[hi[0]]), "02X"), hi[1]) + k[hi[0] + 1:]
+        return s[:lo[0]] + self.nest("%" + format(ord(k[lo[0]]), "02X"), lo[1]) + s[lo[0] + 1:]
 
     def rej(self):
         U, L, B = self.U, self.L, self.B
         return [U + self.mid(L, 2), U + self.mid(L, 3), U + self.mid(L, 4),
                 U + self.mid(B, 2), "https://example.com/p/" + self.mid(L, 2) + "/x",
-                "https://example.com/v1#t=" + self.mid(B, 3)]
+                "https://example.com/v1#t=" + self.mid(B, 3),
+                U + self.mid_no25(L, 1), U + self.mid_no25(L, 2),
+                U + self.mixed_depth(L, 10, 2, 30, 4)]
 
     def test_twice_escaped_long_runs_rejected_on_line_7(self):
         for u in self.rej():
