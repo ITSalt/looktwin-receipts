@@ -5,7 +5,7 @@ import html, re, sys
 from pathlib import Path
 from urllib.parse import unquote
 
-PREF = re.compile(r"(?<![A-Za-z0-9])(ghp_|github_pat_|sk-[A-Za-z0-9_-]*?[A-Za-z0-9_]{20}|sk-(?=[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-]))(?=[A-Za-z0-9_-]*[A-Z])[A-Za-z0-9_](?:[A-Za-z0-9_-]*[A-Za-z0-9_])?|xox[abprs]-|AKIA[0-9A-Z]{16}|AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-]))")
+PREF = re.compile(r"(?<![A-Za-z0-9])(ghp_|github_pat_|sk-(?=[A-Za-z0-9_-]*[A-Za-z0-9_]{20})[A-Za-z0-9_-]+|sk-(?=[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-]))(?=[A-Za-z0-9_-]*[A-Z])[A-Za-z0-9_-]+|sk--[A-Za-z0-9_-]{20,}|xox[abprs]-|AKIA[0-9A-Z]{16}|AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-]))")
 TGTOK = re.compile(r"(?<![0-9])[0-9]{6,12}:[A-Za-z0-9_-]{30,}")  # bot token: id:secret, secret may hold "-"
 OCT = r"(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])"
 IPV4 = re.compile(rf"(?<![\w.]){OCT}(?:\.{OCT}){{3}}(?![\w]|\.[0-9])")
@@ -74,8 +74,8 @@ def sk_titlecase_slug(tok: str) -> bool:
     segs = tok[3:].split("-")
     if len(segs) < 2:
         return False
-    titled = sum(1 for s in segs if re.fullmatch(r"[A-Z][a-z]+", s))
-    return titled >= len(segs) - 1
+    plain = [s for s in segs if not re.fullmatch(r"[A-Z][a-z]+", s)]
+    return len(plain) <= 1 and all(len(s) <= 12 for s in plain)
 
 def secret(line, n):
     if EMAIL.search(line):  # whole line, URLs included (mailto:, ?u=a@b.c)
