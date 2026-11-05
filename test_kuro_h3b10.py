@@ -38,5 +38,20 @@ class H3b10(unittest.TestCase):
                 self.assertIsNotNone(build.secret('x ' + key + ' y', 7))
 
 
+    def test_slug_rule_boundaries(self):
+        # fable-terminal, weekly review 1c2c6a31 (03.11.2026): each kills one surviving mutant
+        chunk = 'x9Q2w8E7r6T5'
+        rejected = ['Alpha-' + chunk + '-' + 'a1B2c3D4e5F6',  # two plain segments: kills len(plain) <= 2
+                    'Alpha-Bravo-' + chunk + 'z']            # 13 chars: kills len(s) <= 13
+        passed = ['Intro-to-Pandas-Dataframes',               # one plain segment: kills len(plain) <= 0
+                  'Alpha-Bravo-' + chunk]                     # 12 chars: kills len(s) <= 11
+        for tail in rejected:
+            with self.subTest(tail=tail[:12]):
+                self.assertIsNotNone(build.secret('x sk-' + tail + ' y', 7))
+        for tail in passed:
+            with self.subTest(tail=tail[:12]):
+                self.assertIsNone(build.secret('x sk-' + tail + ' y', 7))
+
+
 if __name__ == '__main__':
     unittest.main()
